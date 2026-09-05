@@ -6,6 +6,8 @@ import type { Stage } from './scene'
 export type WorldView = {
   /** core の状態を描画へ反映する */
   sync: (world: World, dt: number) => void
+  /** GPU リソースを解放する */
+  dispose: () => void
 }
 
 /** 追従の速さ。値が大きいほど食いつく */
@@ -21,12 +23,14 @@ const GRID_CELL = 2
  * 円形の地面にそのまま貼れるグリッド模様を作る。
  * GridHelper だと正方形なのでフィールドの円からはみ出してしまう。
  */
-function createGridTexture(): THREE.CanvasTexture {
+function createGridTexture(): THREE.CanvasTexture | null {
   const size = 128
   const canvas = document.createElement('canvas')
   canvas.width = size
   canvas.height = size
-  const ctx = canvas.getContext('2d')!
+  // メモリ逼迫時などは 2D コンテキストが取れないことがある。落とさず単色地面へ退く。
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
   ctx.fillStyle = '#1e1c2e'
   ctx.fillRect(0, 0, size, size)
   ctx.strokeStyle = '#37325180'
@@ -46,9 +50,12 @@ function createGridTexture(): THREE.CanvasTexture {
 export function createWorldView(stage: Stage): WorldView {
   const { scene, camera } = stage
 
+  const gridTexture = createGridTexture()
   const ground = new THREE.Mesh(
     new THREE.CircleGeometry(FIELD_RADIUS, 64),
-    new THREE.MeshStandardMaterial({ map: createGridTexture(), roughness: 1 }),
+    new THREE.MeshStandardMaterial(
+      gridTexture ? { map: gridTexture, roughness: 1 } : { color: '#1e1c2e', roughness: 1 },
+    ),
   )
   ground.rotation.x = -Math.PI / 2
   scene.add(ground)
@@ -86,7 +93,11 @@ export function createWorldView(stage: Stage): WorldView {
 
   const desired = new THREE.Vector3()
   const lookAt = new THREE.Vector3()
-  camera.position.copy(CAMERA_OFFSET)
+  // 初回だけ補間せず目標位置へ置く。zoom 補正後の位置と初期値がずれ、
+  // 読み込み直後にカメラが引いていく動きが見えてしまうため。
+  let snapCamera = true
+
+  const objects = [ground, border, player, shadow]
 
   return {
     sync: (world, dt) => {
@@ -105,10 +116,28 @@ export function createWorldView(stage: Stage): WorldView {
         CAMERA_OFFSET.y * zoom,
         p.pos.z + CAMERA_OFFSET.z * zoom,
       )
-      // 1 - exp(-k*dt) はフレームレートが変わっても追従の速さが一定になる補間係数。
-      camera.position.lerp(desired, 1 - Math.exp(-CAMERA_FOLLOW * dt))
+      if (snapCamera) {
+        camera.position.copy(desired)
+        snapCamera = false
+      } else {
+        // 1 - exp(-k*dt) はフレームレートが変わっても追従の速さが一定になる補間係数。
+        camera.position.lerp(desired, 1 - Math.exp(-CAMERA_FOLLOW * dt))
+      }
       lookAt.set(p.pos.x, 0.8, p.pos.z - LOOK_AHEAD)
       camera.lookAt(lookAt)
+    },
+    dispose: () => {
+      // renderer.dispose() はシーングラフのリソースを解放しないので、自前で回収する。
+      for (const object of objects) {
+        scene.remove(object)
+        object.traverse((node) => {
+          if (!(node instanceof THREE.Mesh)) return
+          node.geometry.dispose()
+          const materials = Array.isArray(node.material) ? node.material : [node.material]
+          for (const material of materials) material.dispose()
+        })
+      }
+      gridTexture?.dispose()
     },
   }
 }

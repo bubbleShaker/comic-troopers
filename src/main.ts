@@ -36,5 +36,6 @@ import.meta.hot?.dispose(() => {
   cancelAnimationFrame(frame)
   controls.dispose()
   stick.dispose()
+  view.dispose()
   stage.dispose()
 })

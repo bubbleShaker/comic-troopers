@@ -26,9 +26,9 @@ export type Controls = {
  * 左右で pointerId を分けて持つので、両手同時操作でも取り違えない。
  */
 export function createControls(target: HTMLElement, options: ControlsOptions = {}): Controls {
-  let move = vec2()
   let pendingDash: Vec2 | null = null
 
+  let stickMove = vec2()
   let stickId: number | null = null
   let stickOrigin = { x: 0, y: 0 }
   const swipes = new Map<number, { x: number; y: number }>()
@@ -43,10 +43,12 @@ export function createControls(target: HTMLElement, options: ControlsOptions = {
 
   const onPointerDown = (e: PointerEvent) => {
     const isLeftHalf = e.clientX < window.innerWidth / 2
-    if (isLeftHalf && stickId === null) {
+    if (isLeftHalf) {
+      // 左半分の2本目以降は無視する。手のひらや関節の接触をダッシュと誤認しないため。
+      if (stickId !== null) return
       stickId = e.pointerId
       stickOrigin = { x: e.clientX, y: e.clientY }
-      move = vec2()
+      stickMove = vec2()
       notifyStick(e.clientX, e.clientY)
     } else {
       swipes.set(e.pointerId, { x: e.clientX, y: e.clientY })
@@ -59,7 +61,7 @@ export function createControls(target: HTMLElement, options: ControlsOptions = {
     if (e.pointerId === stickId) {
       const dx = e.clientX - stickOrigin.x
       const dy = e.clientY - stickOrigin.y
-      move = screenToMove(dx, dy)
+      stickMove = screenToMove(dx, dy)
       notifyStick(e.clientX, e.clientY)
       return
     }
@@ -76,7 +78,7 @@ export function createControls(target: HTMLElement, options: ControlsOptions = {
   const endPointer = (e: PointerEvent) => {
     if (e.pointerId === stickId) {
       stickId = null
-      move = vec2()
+      stickMove = vec2()
       options.onStick?.(null)
     }
     swipes.delete(e.pointerId)
@@ -102,6 +104,8 @@ export function createControls(target: HTMLElement, options: ControlsOptions = {
     return clampLength(v, 1)
   }
   const onKeyDown = (e: KeyboardEvent) => {
+    // キーリピート（押しっぱなしで ~30Hz 再発火）でダッシュが連発されるのを防ぐ
+    if (e.repeat) return
     const key = e.key.toLowerCase()
     if (key === ' ' || key === 'shift') {
       const dir = keyboardMove()
@@ -110,12 +114,9 @@ export function createControls(target: HTMLElement, options: ControlsOptions = {
     }
     if (!(key in KEY_DIRS)) return
     keys.add(key)
-    move = keyboardMove()
   }
   const onKeyUp = (e: KeyboardEvent) => {
-    const key = e.key.toLowerCase()
-    if (!keys.delete(key)) return
-    move = keyboardMove()
+    keys.delete(e.key.toLowerCase())
   }
 
   target.addEventListener('pointerdown', onPointerDown)
@@ -126,8 +127,10 @@ export function createControls(target: HTMLElement, options: ControlsOptions = {
   window.addEventListener('keyup', onKeyUp)
 
   return {
+    // スティックとキーボードは別々に持つ。1つの変数を共有すると、
+    // キーを押したままスティックから指を離した時に移動が打ち切られてしまう。
     get move() {
-      return move
+      return stickId !== null ? stickMove : keyboardMove()
     },
     consumeDash: () => {
       const dash = pendingDash

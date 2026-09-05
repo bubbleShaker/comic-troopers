@@ -53,8 +53,10 @@ export const isInvulnerable = (p: Player): boolean => p.invulnerable > 0
  * three.js に依存しないので Node 上で単体テストできる。
  */
 export function stepWorld(world: World, input: PlayerInput, dt: number): void {
+  if (dt <= 0) return
   world.time += dt
   const p = world.player
+  const wasDashing = p.dashTime > 0
 
   p.cooldown = Math.max(0, p.cooldown - dt)
   p.invulnerable = Math.max(0, p.invulnerable - dt)
@@ -71,10 +73,15 @@ export function stepWorld(world: World, input: PlayerInput, dt: number): void {
   }
 
   if (p.dashTime > 0) {
-    p.dashTime = Math.max(0, p.dashTime - dt)
-    // ダッシュ中は入力を無視して一定速度。回避の距離を読みやすくするため。
-    p.vel = vec2(p.dashDir.x * DASH.speed, p.dashDir.z * DASH.speed)
+    // 最後のフレームは「残っていた時間」ぶんだけ進める。dt をまたいで超過分を動くと
+    // フレームレートの低い端末ほどダッシュ距離が伸びてしまうため。
+    const used = Math.min(dt, p.dashTime)
+    p.dashTime -= used
+    const rate = used / dt
+    p.vel = vec2(p.dashDir.x * DASH.speed * rate, p.dashDir.z * DASH.speed * rate)
   } else {
+    // ダッシュ速度(34m/s)が通常移動へ持ち越されると抜け際に長く滑るので、通常の上限まで落とす。
+    p.vel = clampLength(p.vel, PLAYER.speed)
     const move = clampLength(input.move, 1)
     const desired = vec2(move.x * PLAYER.speed, move.z * PLAYER.speed)
     p.vel = moveTowards(p.vel, desired, PLAYER.acceleration * dt)
@@ -93,7 +100,9 @@ export function stepWorld(world: World, input: PlayerInput, dt: number): void {
   }
 
   // 向きはダッシュ方向 > 移動入力 の優先度で決める。入力が無い間は現状維持。
-  const facingTarget = isDashing(p) ? p.dashDir : clampLength(input.move, 1)
+  // 判定にはフレーム開始時点の状態を使う。dashTime は上で減算済みで、
+  // 最終フレームはまだダッシュ速度で進んでいるのに isDashing が false になっているため。
+  const facingTarget = wasDashing ? p.dashDir : clampLength(input.move, 1)
   if (length(facingTarget) > 0.01) {
     p.facing = rotateTowards(p.facing, Math.atan2(facingTarget.x, facingTarget.z), PLAYER.turnRate * dt)
   }

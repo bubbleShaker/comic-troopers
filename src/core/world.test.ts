@@ -104,3 +104,32 @@ describe('stepWorld: 決定性', () => {
     expect(a).toEqual(b)
   })
 })
+
+describe('stepWorld: フレームレート非依存', () => {
+  it('dt が変わってもダッシュ距離が変わらない', () => {
+    const distanceAt = (dt: number): number => {
+      const w = createWorld()
+      stepWorld(w, { move: vec2(), dash: vec2(0, 1) }, dt)
+      // ダッシュが終わった時点で測る（それ以降は惰性なのでダッシュ距離ではない）
+      while (w.player.dashTime > 0) stepWorld(w, NO_INPUT, dt)
+      return w.player.pos.z
+    }
+    // 60fps と、main.ts の dt 上限である 20fps を比較する
+    expect(distanceAt(1 / 60)).toBeCloseTo(distanceAt(1 / 20), 5)
+    expect(distanceAt(1 / 60)).toBeCloseTo(DASH.speed * DASH.duration, 5)
+  })
+
+  it('ダッシュ直後に通常の最高速度を超えたままにならない', () => {
+    const w = createWorld()
+    stepWorld(w, { move: vec2(), dash: vec2(0, 1) }, 1 / 60)
+    run(w, DASH.duration + 0.05)
+    expect(length(w.player.vel)).toBeLessThanOrEqual(PLAYER.speed + 1e-6)
+  })
+
+  it('dt が 0 以下なら何も進まない', () => {
+    const w = createWorld()
+    const before = structuredClone(w)
+    stepWorld(w, { move: vec2(0, 1), dash: vec2(0, 1) }, 0)
+    expect(w).toEqual(before)
+  })
+})
