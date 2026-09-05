@@ -14,6 +14,8 @@ export const PLAYER = {
   acceleration: 60,
   /** 1秒あたりの回頭量（ラジアン） */
   turnRate: Math.PI * 4,
+  /** 被弾直後の無敵時間。群れに触れて一度に何度も食らうのを防ぐ */
+  hitInvulnerable: 0.7,
 } as const
 
 export const DASH = {

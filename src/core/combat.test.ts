@@ -117,3 +117,43 @@ describe('敵の挙動', () => {
     expect(distance(a!.pos, b!.pos)).toBeGreaterThan(0.5)
   })
 })
+
+describe('低フレームレートでの当たり判定', () => {
+  it('dt が大きくても弾が敵をすり抜けない', () => {
+    // main.ts の dt 上限。1フレームで 2.3m 進み、敵の当たり半径(1.15m)より大きい
+    const SLOW_DT = 1 / 20
+    const world = withEnemies([vec2(0.5, 8)])
+    for (let i = 0; i < 20; i++) {
+      updateWeapon(world, SLOW_DT)
+      updateBullets(world, SLOW_DT)
+      if (world.enemies.length === 0) break
+    }
+    expect(world.kills).toBe(1)
+  })
+})
+
+describe('同一フレームでの多重判定', () => {
+  it('1体の敵が二重に撃破されない', () => {
+    const world = withEnemies([vec2(0, 3)])
+    // 同じ敵へ向かう弾を複数用意し、同じフレームで到達させる
+    for (let i = 0; i < 4; i++) {
+      world.bullets.push({
+        id: 100 + i,
+        pos: vec2(0, 2.9 - i * 0.01),
+        vel: vec2(0, WEAPON.bulletSpeed),
+        life: 1,
+      })
+    }
+    updateBullets(world, 1 / 60)
+    expect(world.kills).toBe(1)
+    expect(world.events.filter((e) => e.type === 'kill')).toHaveLength(1)
+  })
+
+  it('群れに触れても1フレームで何度も被弾しない', () => {
+    const world = withEnemies([vec2(0, 1), vec2(1, 0), vec2(-1, 0)])
+    updateEnemies(world, 1 / 60)
+    expect(world.events.filter((e) => e.type === 'playerHit')).toHaveLength(1)
+    // 触れていた残りの敵は消えずに残る
+    expect(world.enemies.length).toBeGreaterThan(0)
+  })
+})

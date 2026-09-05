@@ -23,11 +23,19 @@ function spawnOne(world: World): void {
   if (world.enemies.length >= ENEMY.max) return
 
   const radius = FIELD_RADIUS - ENEMY.radius - 0.2
+  // どの候補も近すぎた場合は「その中で最も遠い候補」を使う。
+  // 最後に引いた候補をそのまま使うと、自機に密着した位置に湧きうる。
   let pos = vec2()
+  let bestDistance = -1
   for (let attempt = 0; attempt < MAX_SPAWN_ATTEMPTS; attempt++) {
     const angle = range(world.rng, 0, Math.PI * 2)
-    pos = vec2(Math.sin(angle) * radius, Math.cos(angle) * radius)
-    if (distance(pos, world.player.pos) >= MIN_SPAWN_DISTANCE) break
+    const candidate = vec2(Math.sin(angle) * radius, Math.cos(angle) * radius)
+    const d = distance(candidate, world.player.pos)
+    if (d > bestDistance) {
+      bestDistance = d
+      pos = candidate
+    }
+    if (d >= MIN_SPAWN_DISTANCE) break
   }
 
   world.enemies.push({ id: world.nextId++, pos, hp: ENEMY.hp, hitFlash: 0 })

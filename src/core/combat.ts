@@ -1,6 +1,6 @@
 import { ENEMY, FIELD_RADIUS, PLAYER, WEAPON } from './config'
 import type { Enemy, World } from './entities'
-import { distance, normalize, vec2 } from './types'
+import { distance, distanceToSegment, normalize, vec2 } from './types'
 import { isInvulnerable } from './player'
 
 /** 敵同士が完全に重なると1体に見えるので、弱く押しのける */
@@ -57,6 +57,9 @@ export function updateEnemies(world: World, dt: number): void {
     if (distance(enemy.pos, player.pos) < ENEMY.radius + PLAYER.radius) {
       if (!isInvulnerable(player)) {
         world.events.push({ type: 'playerHit', pos: enemy.pos })
+        // 被弾後は短い無敵を与える。これが無いと群れに触れた瞬間、
+        // 同じフレームで接触している敵が全部まとめて消えてしまう。
+        player.invulnerable = PLAYER.hitInvulnerable
         continue // 接触した敵は消える
       }
     }
@@ -96,11 +99,16 @@ export function updateBullets(world: World, dt: number): void {
   for (const bullet of world.bullets) {
     bullet.life -= dt
     if (bullet.life <= 0) continue
+    const from = bullet.pos
     bullet.pos = vec2(bullet.pos.x + bullet.vel.x * dt, bullet.pos.z + bullet.vel.z * dt)
 
     let hit = false
     for (const enemy of world.enemies) {
-      if (distance(bullet.pos, enemy.pos) > ENEMY.radius + WEAPON.bulletRadius) continue
+      // 同じフレームで既に倒された敵は当たり判定から外す。
+      // 残すと1体の撃破が二重に数えられ、弾も死体に吸われる。
+      if (enemy.hp <= 0) continue
+      // 移動の軌跡で判定する。点で判定すると低フレームレート時にすり抜ける。
+      if (distanceToSegment(from, bullet.pos, enemy.pos) > ENEMY.radius + WEAPON.bulletRadius) continue
       enemy.hp -= 1
       enemy.hitFlash = 0.12
       hit = true

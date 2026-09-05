@@ -3,7 +3,10 @@ import { DASH, FIELD_RADIUS, PLAYER } from './config'
 import { length, vec2 } from './types'
 import { createWorld, isDashing, isInvulnerable, NO_INPUT, stepWorld, type World } from './world'
 
-/** World は RNG（関数）を持つので、比較には JSON 化した値を使う。 */
+/**
+ * World の比較用スナップショット。RNG は next() だけが関数で state は素の値なので、
+ * JSON 化しても「乱数がどこまで進んだか」は比較対象に残る。
+ */
 const snapshot = (world: World): string => JSON.stringify(world)
 
 /** dt を細かく刻んで seconds 秒ぶん進める。1フレームで大きく進めると挙動が実機とずれるため。 */

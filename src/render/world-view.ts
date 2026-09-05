@@ -145,9 +145,10 @@ export function createWorldView(stage: Stage): WorldView {
       for (const enemy of world.enemies) {
         const mesh = enemyPool.take()
         mesh.position.set(enemy.pos.x, ENEMY.radius, enemy.pos.z)
-        // 転がるような回転で「生きている」感を出す
-        mesh.rotation.y += dt * 3
-        mesh.rotation.x += dt * 1.5
+        // 転がるような回転で「生きている」感を出す。
+        // 加算ではなく id と時刻から決める。プールの枠は敵が死ぬたびに詰め替わるので、
+        // 加算だと後ろの敵が前の住人の回転角へ飛んでしまう。
+        mesh.rotation.set(world.time * 1.5 + enemy.id, world.time * 3 + enemy.id, 0)
         const material = mesh.material as THREE.MeshStandardMaterial
         material.color.set(enemy.hitFlash > 0 ? '#ffffff' : ENEMY_COLOR)
       }
