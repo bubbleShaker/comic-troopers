@@ -24,14 +24,14 @@ export function createStage(container: HTMLElement, options: StageOptions = {}):
   container.appendChild(renderer.domElement)
 
   const scene = new THREE.Scene()
-  scene.background = new THREE.Color('#12101a')
+  scene.background = new THREE.Color('#171335')
 
   const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 300)
   camera.position.set(0, 8, 10)
   camera.lookAt(0, 0, 0)
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.45))
-  const key = new THREE.DirectionalLight(0xffffff, 1.2)
+  scene.add(new THREE.AmbientLight(0xffffff, 0.75))
+  const key = new THREE.DirectionalLight(0xffffff, 1.8)
   key.position.set(5, 10, 6)
   scene.add(key)
 

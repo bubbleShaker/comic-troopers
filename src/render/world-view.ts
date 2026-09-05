@@ -1,9 +1,10 @@
 import * as THREE from 'three'
-import { FIELD_RADIUS } from '../core/config'
-import { ENEMY, WEAPON } from '../core/config'
+import { ENEMY, FIELD_RADIUS, WEAPON } from '../core/config'
 import { isDashing, type World } from '../core/world'
+import { createOnomatopoeiaLayer } from './onomatopoeia'
 import { createPool } from './pool'
 import type { Stage } from './scene'
+import { attachOutline, createToonGradient, createToonMaterial, weldForOutline } from './toon'
 
 export type WorldView = {
   /** core の状態を描画へ反映する */
@@ -20,7 +21,23 @@ const CAMERA_OFFSET = new THREE.Vector3(0, 18, 12)
 const LOOK_AHEAD = 3
 /** 1マスの大きさ(m) */
 const GRID_CELL = 2
-const ENEMY_COLOR = '#ff5c39'
+
+/** 撃破時に出す効果音文字。毎回同じだと単調なので複数から選ぶ */
+const KILL_WORDS = ['ドカン', 'バキッ', 'ズガン', 'ドドド', 'ドゴォ', 'バァン']
+/** 画面の揺れが収まる速さ */
+const SHAKE_DECAY = 4
+
+const COLORS = {
+  ground: '#332c57',
+  gridLine: '#4b4180',
+  border: '#ffd23f',
+  player: '#f7f4ff',
+  playerDash: '#5ef2ff',
+  nose: '#ffd23f',
+  enemy: '#ff4757',
+  enemyFlash: '#ffffff',
+  bullet: '#ffe066',
+} as const
 
 /**
  * 円形の地面にそのまま貼れるグリッド模様を作る。
@@ -34,9 +51,9 @@ function createGridTexture(): THREE.CanvasTexture | null {
   // メモリ逼迫時などは 2D コンテキストが取れないことがある。落とさず単色地面へ退く。
   const ctx = canvas.getContext('2d')
   if (!ctx) return null
-  ctx.fillStyle = '#1e1c2e'
+  ctx.fillStyle = COLORS.ground
   ctx.fillRect(0, 0, size, size)
-  ctx.strokeStyle = '#37325180'
+  ctx.strokeStyle = COLORS.gridLine
   ctx.lineWidth = 4
   ctx.strokeRect(0, 0, size, size)
   const texture = new THREE.CanvasTexture(canvas)
@@ -52,20 +69,20 @@ function createGridTexture(): THREE.CanvasTexture | null {
 
 export function createWorldView(stage: Stage): WorldView {
   const { scene, camera } = stage
+  const gradient = createToonGradient(3)
 
+  // 地面は陰影を付けない。コミック調では平坦なベタ塗りの方が手前の要素が立つ。
   const gridTexture = createGridTexture()
   const ground = new THREE.Mesh(
     new THREE.CircleGeometry(FIELD_RADIUS, 64),
-    new THREE.MeshStandardMaterial(
-      gridTexture ? { map: gridTexture, roughness: 1 } : { color: '#1e1c2e', roughness: 1 },
-    ),
+    new THREE.MeshBasicMaterial(gridTexture ? { map: gridTexture } : { color: COLORS.ground }),
   )
   ground.rotation.x = -Math.PI / 2
   scene.add(ground)
 
   const border = new THREE.Mesh(
-    new THREE.RingGeometry(FIELD_RADIUS - 0.35, FIELD_RADIUS, 64),
-    new THREE.MeshBasicMaterial({ color: '#ff4d6d', side: THREE.DoubleSide }),
+    new THREE.RingGeometry(FIELD_RADIUS - 0.4, FIELD_RADIUS, 64),
+    new THREE.MeshBasicMaterial({ color: COLORS.border, side: THREE.DoubleSide }),
   )
   border.rotation.x = -Math.PI / 2
   border.position.y = 0.02
@@ -73,12 +90,17 @@ export function createWorldView(stage: Stage): WorldView {
 
   // 自機。モデルの前方を +Z に揃えてあるので、rotation.y に facing をそのまま入れられる。
   const player = new THREE.Group()
-  const bodyMaterial = new THREE.MeshStandardMaterial({ color: '#f4f4ff', roughness: 0.45 })
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.6, 1.0, 4, 12), bodyMaterial)
+  const bodyMaterial = createToonMaterial(COLORS.player, gradient)
+  const body = attachOutline(
+    new THREE.Mesh(new THREE.CapsuleGeometry(0.6, 1.0, 4, 12), bodyMaterial),
+    undefined,
+    0.07,
+  )
   body.position.y = 1.1
-  const nose = new THREE.Mesh(
-    new THREE.ConeGeometry(0.38, 0.9, 4),
-    new THREE.MeshStandardMaterial({ color: '#ffd23f', roughness: 0.3 }),
+  const nose = attachOutline(
+    new THREE.Mesh(new THREE.ConeGeometry(0.38, 0.9, 4), createToonMaterial(COLORS.nose, gradient)),
+    undefined,
+    0.05,
   )
   nose.rotation.x = Math.PI / 2
   nose.position.set(0, 1.3, 0.7)
@@ -94,20 +116,26 @@ export function createWorldView(stage: Stage): WorldView {
   shadow.position.y = 0.03
   scene.add(shadow)
 
-  // 敵と弾はジオメトリを共有し、マテリアルだけ個別に持つ（被弾点滅を1体ずつ変えるため）
+  // 敵はジオメトリと輪郭を共有し、マテリアルだけ個別に持つ（被弾点滅を1体ずつ変えるため）
   const enemyGeometry = new THREE.OctahedronGeometry(ENEMY.radius, 0)
+  const enemyOutlineGeometry = weldForOutline(enemyGeometry)
   const enemyPool = createPool(
     scene,
     () =>
-      new THREE.Mesh(
-        enemyGeometry,
-        new THREE.MeshStandardMaterial({ color: ENEMY_COLOR, flatShading: true, roughness: 0.6 }),
+      attachOutline(
+        new THREE.Mesh(enemyGeometry, createToonMaterial(COLORS.enemy, gradient)),
+        enemyOutlineGeometry,
+        0.06,
       ),
-    (mesh) => (mesh.material as THREE.Material).dispose(),
+    (mesh) => {
+      // 個別なのは本体のマテリアルだけ。ジオメトリと輪郭は共有なのでここでは触らない。
+      const material = mesh.material as THREE.Material
+      material.dispose()
+    },
   )
 
   const bulletGeometry = new THREE.SphereGeometry(WEAPON.bulletRadius, 8, 6)
-  const bulletMaterial = new THREE.MeshBasicMaterial({ color: '#ffe066' })
+  const bulletMaterial = new THREE.MeshBasicMaterial({ color: COLORS.bullet })
   const bulletPool = createPool(
     scene,
     () => new THREE.Mesh(bulletGeometry, bulletMaterial),
@@ -117,11 +145,19 @@ export function createWorldView(stage: Stage): WorldView {
   // ロックオンマーカー。対象の足元で回すだけの簡素なリング。
   const lockMarker = new THREE.Mesh(
     new THREE.RingGeometry(1.0, 1.25, 4),
-    new THREE.MeshBasicMaterial({ color: '#ffd23f', side: THREE.DoubleSide, transparent: true, opacity: 0.9 }),
+    new THREE.MeshBasicMaterial({
+      color: COLORS.border,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.9,
+    }),
   )
   lockMarker.rotation.x = -Math.PI / 2
   lockMarker.visible = false
   scene.add(lockMarker)
+
+  const onomatopoeia = createOnomatopoeiaLayer(scene)
+  let shake = 0
 
   const desired = new THREE.Vector3()
   const lookAt = new THREE.Vector3()
@@ -138,8 +174,7 @@ export function createWorldView(stage: Stage): WorldView {
       player.rotation.y = p.facing
       shadow.position.set(p.pos.x, 0.03, p.pos.z)
 
-      // ダッシュ中を色で示す（本格的な演出は M3）
-      bodyMaterial.color.set(isDashing(p) ? '#7cf5ff' : '#f4f4ff')
+      bodyMaterial.color.set(isDashing(p) ? COLORS.playerDash : COLORS.player)
 
       enemyPool.begin()
       for (const enemy of world.enemies) {
@@ -149,8 +184,8 @@ export function createWorldView(stage: Stage): WorldView {
         // 加算ではなく id と時刻から決める。プールの枠は敵が死ぬたびに詰め替わるので、
         // 加算だと後ろの敵が前の住人の回転角へ飛んでしまう。
         mesh.rotation.set(world.time * 1.5 + enemy.id, world.time * 3 + enemy.id, 0)
-        const material = mesh.material as THREE.MeshStandardMaterial
-        material.color.set(enemy.hitFlash > 0 ? '#ffffff' : ENEMY_COLOR)
+        const material = mesh.material as THREE.MeshToonMaterial
+        material.color.set(enemy.hitFlash > 0 ? COLORS.enemyFlash : COLORS.enemy)
       }
       enemyPool.end()
 
@@ -159,6 +194,22 @@ export function createWorldView(stage: Stage): WorldView {
         bulletPool.take().position.set(bullet.pos.x, 1.1, bullet.pos.z)
       }
       bulletPool.end()
+
+      // 出来事に対する演出。core 側は「何が起きたか」だけを events に積み、
+      // どう見せるかはここだけで決める。
+      for (const event of world.events) {
+        if (event.type === 'kill') {
+          const word = KILL_WORDS[Math.floor(Math.random() * KILL_WORDS.length)]!
+          onomatopoeia.emit(word, event.pos.x, event.pos.z, { color: '#ffd23f', scale: 1.05 })
+          shake = Math.max(shake, 0.35)
+        } else if (event.type === 'hit') {
+          onomatopoeia.emit('ビシ', event.pos.x, event.pos.z, { color: '#ffffff', scale: 0.7 })
+        } else {
+          onomatopoeia.emit('ガッ！', event.pos.x, event.pos.z, { color: '#ff4757', scale: 1.3 })
+          shake = Math.max(shake, 1.1)
+        }
+      }
+      onomatopoeia.update(dt)
 
       const target = world.enemies.find((enemy) => enemy.id === world.lockTargetId)
       lockMarker.visible = target !== undefined
@@ -182,7 +233,11 @@ export function createWorldView(stage: Stage): WorldView {
         // 1 - exp(-k*dt) はフレームレートが変わっても追従の速さが一定になる補間係数。
         camera.position.lerp(desired, 1 - Math.exp(-CAMERA_FOLLOW * dt))
       }
-      lookAt.set(p.pos.x, 0.8, p.pos.z - LOOK_AHEAD)
+      // 揺れはカメラ位置ではなく注視点に入れる。位置を動かすと追従の補間と喧嘩する。
+      shake = Math.max(0, shake - dt * SHAKE_DECAY)
+      const shakeX = (Math.random() - 0.5) * shake
+      const shakeY = (Math.random() - 0.5) * shake
+      lookAt.set(p.pos.x + shakeX, 0.8 + shakeY, p.pos.z - LOOK_AHEAD)
       camera.lookAt(lookAt)
     },
     dispose: () => {
@@ -196,12 +251,15 @@ export function createWorldView(stage: Stage): WorldView {
           for (const material of materials) material.dispose()
         })
       }
+      onomatopoeia.dispose()
       gridTexture?.dispose()
       enemyPool.dispose()
       bulletPool.dispose()
       enemyGeometry.dispose()
+      enemyOutlineGeometry.dispose()
       bulletGeometry.dispose()
       bulletMaterial.dispose()
+      gradient.dispose()
     },
   }
 }
