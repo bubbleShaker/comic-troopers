@@ -40,9 +40,22 @@ export type WorldEvent =
   | { type: 'kill'; pos: Vec2 }
   | { type: 'playerHit'; pos: Vec2 }
 
+/**
+ * ラン（1プレイ）の進行段階。
+ * ready = タイトル表示中、playing = 計測中、finished = リザルト表示中。
+ */
+export type Phase = 'ready' | 'playing' | 'finished'
+
 export type World = {
+  phase: Phase
   /** ラン開始からの経過秒数 */
   time: number
+  /** 残り時間(秒) */
+  remaining: number
+  score: number
+  /** 現在の連続撃破数。被弾で 0 に戻る */
+  combo: number
+  maxCombo: number
   player: Player
   enemies: Enemy[]
   bullets: Bullet[]

@@ -1,4 +1,4 @@
-import { ENEMY, FIELD_RADIUS, WAVES } from './config'
+import { ENEMY, FIELD_RADIUS, RUN, WAVES } from './config'
 import type { World } from './entities'
 import { range } from './rng'
 import { distance, vec2 } from './types'
@@ -41,12 +41,18 @@ function spawnOne(world: World): void {
   world.enemies.push({ id: world.nextId++, pos, hp: ENEMY.hp, hitFlash: 0 })
 }
 
+/** 終盤は湧きを詰めて盛り上げる。最後の数秒が一番忙しくなるように。 */
+export function spawnInterval(world: World): number {
+  const wave = currentWave(world.time)
+  return world.remaining <= RUN.rushAt ? wave.interval * RUN.rushFactor : wave.interval
+}
+
 export function updateSpawner(world: World, dt: number): void {
   const wave = currentWave(world.time)
   world.spawnTimer -= dt
   // dt が大きいフレームでも溜まった湧きを取りこぼさないよう、間隔ぶん繰り返す
   while (world.spawnTimer <= 0) {
     for (let i = 0; i < wave.count; i++) spawnOne(world)
-    world.spawnTimer += wave.interval
+    world.spawnTimer += spawnInterval(world)
   }
 }
