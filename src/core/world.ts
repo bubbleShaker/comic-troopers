@@ -34,9 +34,10 @@ export function createWorld(seed = 1): World {
  * three.js に依存しないので Node 上で単体テストできる。
  */
 export function stepWorld(world: World, input: PlayerInput, dt: number): void {
-  if (dt <= 0) return
   // イベントは1フレームだけ有効。参照を保持されると壊れるので毎回空にする。
+  // dt が 0 のフレームでも消す。残すと演出が同じ出来事に二度反応してしまう。
   world.events.length = 0
+  if (dt <= 0) return
   world.time += dt
 
   updatePlayer(world, input, dt)

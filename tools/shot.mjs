@@ -15,12 +15,25 @@ const CHROME_CANDIDATES = [
 const executablePath = CHROME_CANDIDATES.find((p) => existsSync(p))
 if (!executablePath) throw new Error('Chrome/Edge が見つからない。CHROME_PATH を指定して。')
 
-const [url = 'http://localhost:4173/comic-troopers/', out = 'shot.png', waitRaw = '4000'] =
-  process.argv.slice(2)
+const [
+  url = 'http://localhost:4173/comic-troopers/',
+  out = 'shot.png',
+  waitRaw = '4000',
+  countRaw = '1',
+  intervalRaw = '250',
+] = process.argv.slice(2)
 
-const waitMs = Number(waitRaw)
-// NaN のまま setTimeout に渡すと 0 扱いになり、描画前の空フレームを撮ってしまう
-if (!Number.isFinite(waitMs) || waitMs < 0) throw new Error(`待ち時間が不正: ${waitRaw}`)
+const nonNegativeNumber = (raw, name) => {
+  const value = Number(raw)
+  // NaN のまま setTimeout に渡すと 0 扱いになり、描画前の空フレームを撮ってしまう
+  if (!Number.isFinite(value) || value < 0) throw new Error(`${name}が不正: ${raw}`)
+  return value
+}
+
+const waitMs = nonNegativeNumber(waitRaw, '待ち時間')
+// 演出は一瞬で消えるので、1回のセッションから連写できるようにしてある
+const count = Math.max(1, Math.floor(nonNegativeNumber(countRaw, '枚数')))
+const intervalMs = nonNegativeNumber(intervalRaw, '撮影間隔')
 
 const browser = await puppeteer.launch({
   executablePath,
@@ -36,8 +49,12 @@ try {
   page.on('pageerror', (e) => console.log('[pageerror]', e.message))
   await page.goto(url, { waitUntil: 'domcontentloaded' })
   await new Promise((r) => setTimeout(r, waitMs))
-  await page.screenshot({ path: out })
-  console.log(`saved ${out} (waited ${waitMs}ms)`)
+  for (let i = 0; i < count; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, intervalMs))
+    const path = count === 1 ? out : out.replace(/(\.png)?$/, `-${String(i + 1).padStart(2, '0')}.png`)
+    await page.screenshot({ path })
+    console.log(`saved ${path}`)
+  }
 } finally {
   await browser.close()
 }
