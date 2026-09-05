@@ -23,17 +23,17 @@ const [
   intervalRaw = '250',
 ] = process.argv.slice(2)
 
-const positiveNumber = (raw, name) => {
+const nonNegativeNumber = (raw, name) => {
   const value = Number(raw)
   // NaN のまま setTimeout に渡すと 0 扱いになり、描画前の空フレームを撮ってしまう
   if (!Number.isFinite(value) || value < 0) throw new Error(`${name}が不正: ${raw}`)
   return value
 }
 
-const waitMs = positiveNumber(waitRaw, '待ち時間')
+const waitMs = nonNegativeNumber(waitRaw, '待ち時間')
 // 演出は一瞬で消えるので、1回のセッションから連写できるようにしてある
-const count = Math.max(1, Math.floor(positiveNumber(countRaw, '枚数')))
-const intervalMs = positiveNumber(intervalRaw, '撮影間隔')
+const count = Math.max(1, Math.floor(nonNegativeNumber(countRaw, '枚数')))
+const intervalMs = nonNegativeNumber(intervalRaw, '撮影間隔')
 
 const browser = await puppeteer.launch({
   executablePath,

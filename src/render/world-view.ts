@@ -128,9 +128,13 @@ export function createWorldView(stage: Stage): WorldView {
         0.06,
       ),
     (mesh) => {
-      // 個別なのは本体のマテリアルだけ。ジオメトリと輪郭は共有なのでここでは触らない。
-      const material = mesh.material as THREE.Material
-      material.dispose()
+      // 本体のトゥーンマテリアルと、子として付いた輪郭のシェーダマテリアルはどちらも個別。
+      // ジオメトリだけが共有なのでここでは触らない。
+      mesh.traverse((node) => {
+        if (!(node instanceof THREE.Mesh)) return
+        const materials = Array.isArray(node.material) ? node.material : [node.material]
+        for (const material of materials) material.dispose()
+      })
     },
   )
 
@@ -204,7 +208,7 @@ export function createWorldView(stage: Stage): WorldView {
           shake = Math.max(shake, 0.35)
         } else if (event.type === 'hit') {
           onomatopoeia.emit('ビシ', event.pos.x, event.pos.z, { color: '#ffffff', scale: 0.7 })
-        } else {
+        } else if (event.type === 'playerHit') {
           onomatopoeia.emit('ガッ！', event.pos.x, event.pos.z, { color: '#ff4757', scale: 1.3 })
           shake = Math.max(shake, 1.1)
         }

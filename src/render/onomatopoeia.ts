@@ -30,6 +30,8 @@ const BASE_SIZE = 5.2
 type Pop = {
   sprite: THREE.Sprite
   material: THREE.SpriteMaterial
+  /** 発生順の通し番号。枠が足りない時に最も古いものを選ぶために使う */
+  stamp: number
   life: number
   baseX: number
   baseY: number
@@ -40,14 +42,16 @@ type Pop = {
 
 /**
  * 文字を描いたテクスチャ。太い黒縁 → 白縁 → 塗り の三段重ねでコミックらしい縁取りにする。
+ * 2D コンテキストが取れない環境では null を返す。ここで例外を投げると、
+ * 呼び出し元が毎フレームのゲームループなので、演出の失敗が本編ごと止めてしまう。
  */
-function createTextTexture(text: string, color: string): THREE.CanvasTexture {
+function createTextTexture(text: string, color: string): THREE.CanvasTexture | null {
   const fontSize = 84
   // 900 を持たない日本語フォントが多いので bold にしておく
   const font = `bold ${fontSize}px "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif`
 
   const measure = document.createElement('canvas').getContext('2d')
-  if (!measure) throw new Error('2D コンテキストが取れない')
+  if (!measure) return null
   measure.font = font
   const width = Math.ceil(measure.measureText(text).width) + 48
 
@@ -55,7 +59,7 @@ function createTextTexture(text: string, color: string): THREE.CanvasTexture {
   canvas.width = width
   canvas.height = TEXTURE_HEIGHT
   const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('2D コンテキストが取れない')
+  if (!ctx) return null
 
   ctx.font = font
   ctx.textAlign = 'center'
@@ -83,15 +87,14 @@ export function createOnomatopoeiaLayer(scene: THREE.Scene): OnomatopoeiaLayer {
   // 同じ文字を何度も描き直さないようキャッシュする
   const textures = new Map<string, THREE.CanvasTexture>()
   const pops: Pop[] = []
-  let cursor = 0
+  let nextStamp = 1
 
-  const textureFor = (text: string, color: string): THREE.CanvasTexture => {
+  const textureFor = (text: string, color: string): THREE.CanvasTexture | null => {
     const key = `${text}/${color}`
-    let texture = textures.get(key)
-    if (!texture) {
-      texture = createTextTexture(text, color)
-      textures.set(key, texture)
-    }
+    const cached = textures.get(key)
+    if (cached) return cached
+    const texture = createTextTexture(text, color)
+    if (texture) textures.set(key, texture)
     return texture
   }
 
@@ -102,16 +105,21 @@ export function createOnomatopoeiaLayer(scene: THREE.Scene): OnomatopoeiaLayer {
     // 文字が地形に埋もれないよう、常に手前に描く
     sprite.renderOrder = 10
     scene.add(sprite)
-    pops.push({ sprite, material, life: 0, baseX: 0, baseY: 0, baseZ: 0, scale: 1, drift: 0 })
+    pops.push({ sprite, material, stamp: 0, life: 0, baseX: 0, baseY: 0, baseZ: 0, scale: 1, drift: 0 })
   }
 
   return {
     emit: (text, x, z, style = {}) => {
-      // 空きが無ければ最も古い枠を奪う。演出なので消えても致命的ではない。
-      const pop = pops.find((p) => p.life <= 0) ?? pops[cursor % CAPACITY]!
-      cursor += 1
-
       const texture = textureFor(text, style.color ?? '#ffd23f')
+      // 文字が作れない環境では演出だけ諦める。本編は止めない。
+      if (!texture) return
+
+      // 空きが無ければ最も古い枠を奪う。演出なので消えても致命的ではない。
+      const pop =
+        pops.find((p) => p.life <= 0) ??
+        pops.reduce((oldest, p) => (p.stamp < oldest.stamp ? p : oldest))
+      pop.stamp = nextStamp++
+
       pop.material.map = texture
       pop.material.opacity = 1
       pop.material.needsUpdate = true
