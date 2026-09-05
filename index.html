@@ -109,7 +109,9 @@
       #hud-combo {
         justify-self: end;
         text-align: right;
-        font-size: 1.3rem;
+        /* 折り返すと HUD の高さが変わって画面がガタつくので1行に固定する */
+        white-space: nowrap;
+        font-size: 1.15rem;
         font-weight: 800;
         font-style: italic;
         color: var(--accent);
@@ -125,9 +127,13 @@
         position: fixed;
         inset: 0;
         display: grid;
-        place-items: center;
-        padding: 1.5rem;
-        background: rgba(15, 12, 34, 0.72);
+        /* 中央には自機が立っているので、文字は上寄せにして重ならないようにする。
+           vh ではなく上寄せで逃がすことで、画面が低い端末でも card がはみ出さない。 */
+        justify-items: center;
+        align-items: start;
+        padding: max(9vh, 2rem) 1.5rem 1.5rem;
+        overflow-y: auto;
+        background: rgba(15, 12, 34, 0.58);
         z-index: 20;
       }
       #overlay[hidden] {
@@ -232,7 +238,8 @@
     </div>
 
     <div id="overlay">
-      <div id="overlay-card" class="inked"></div>
+      <!-- スクリプトが読み込まれるまでの数百ミリ秒、空の暗幕にしないための初期表示 -->
+      <div id="overlay-card" class="inked"><h1>COMIC<br />TROOPERS</h1></div>
     </div>
 
     <div id="notice" role="status" aria-live="polite"></div>
