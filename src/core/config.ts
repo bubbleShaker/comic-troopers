@@ -29,8 +29,12 @@ export const DASH = {
 export const ENEMY = {
   radius: 0.8,
   /** 自機より遅くする。囲まれる緊張感と、逃げ切れる余地の両立 */
-  speed: 5.2,
-  hp: 1,
+  speed: 6.0,
+  /**
+   * 2発必要にして撃破速度を落とす。1発だと自動射撃が湧きに勝ってしまい、
+   * 何もせず放置しても敵が寄ってこない＝操作する意味が無いゲームになる。
+   */
+  hp: 2,
   /** 同時に存在できる上限。これを超える湧きは捨てる（描画とロジックの負荷対策） */
   max: 44,
 } as const
@@ -49,10 +53,34 @@ export const WEAPON = {
   bulletLife: 0.6,
 } as const
 
-/** ウェーブ。until は「この秒数まで」。最後の要素は残り全部を受け持つ */
+/**
+ * ウェーブ。until は「この秒数まで」。最後の要素は残り全部を受け持つ。
+ * 自動射撃の撃破速度（約 3.8体/秒）を基準に、序盤は余裕、終盤は捌ききれない量にしてある。
+ */
 export const WAVES = [
-  { until: 12, interval: 1.0, count: 1 },
-  { until: 28, interval: 0.75, count: 2 },
-  { until: 45, interval: 0.6, count: 2 },
-  { until: Number.POSITIVE_INFINITY, interval: 0.42, count: 3 },
+  { until: 12, interval: 0.9, count: 1 },
+  { until: 28, interval: 0.7, count: 2 },
+  { until: 45, interval: 0.55, count: 2 },
+  { until: Number.POSITIVE_INFINITY, interval: 0.45, count: 3 },
 ] as const
+
+/** 1回のラン（プレイ）のルール */
+export const RUN = {
+  /** 制限時間(秒) */
+  duration: 60,
+  /** 撃破1体の基礎点 */
+  killScore: 100,
+  /** コンボ1につき増える倍率 */
+  comboStep: 0.1,
+  /**
+   * 倍率の上限。低いと早々に頭打ちになり、後半のコンボ維持に意味が無くなる。
+   * comboStep 0.1 なので 70 連続撃破で到達する。
+   */
+  comboMax: 8,
+  /** 被弾時の減点 */
+  hitPenalty: 300,
+  /** 残りこの秒数を切ったら湧きを増やす（終盤の追い込み） */
+  rushAt: 10,
+  /** 追い込み中の湧き間隔の倍率 */
+  rushFactor: 0.7,
+} as const

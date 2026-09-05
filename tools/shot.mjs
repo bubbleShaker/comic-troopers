@@ -48,6 +48,11 @@ try {
   page.on('console', (m) => console.log(`[page:${m.type()}]`, m.text()))
   page.on('pageerror', (e) => console.log('[pageerror]', e.message))
   await page.goto(url, { waitUntil: 'domcontentloaded' })
+  // タイトル画面から先へ進めたい時用。SHOT_TAP=1 で画面中央を1回タップする。
+  if (process.env.SHOT_TAP === '1') {
+    await new Promise((r) => setTimeout(r, 800))
+    await page.mouse.click(195, 500)
+  }
   await new Promise((r) => setTimeout(r, waitMs))
   for (let i = 0; i < count; i++) {
     if (i > 0) await new Promise((r) => setTimeout(r, intervalMs))

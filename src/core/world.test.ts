@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import { DASH, FIELD_RADIUS, PLAYER } from './config'
 import { length, vec2 } from './types'
-import { createWorld, isDashing, isInvulnerable, NO_INPUT, stepWorld, type World } from './world'
+import {
+  createWorld,
+  isDashing,
+  isInvulnerable,
+  NO_INPUT,
+  startRun,
+  stepWorld,
+  type World,
+} from './world'
+
+/** 自機の挙動を見るテストは計測中のワールドで行う（ready のままだと世界が動かない）。 */
+function startedWorld(): World {
+  const world = createWorld()
+  startRun(world)
+  return world
+}
 
 /**
  * World の比較用スナップショット。RNG は next() だけが関数で state は素の値なので、
@@ -16,40 +31,40 @@ function run(world: World, seconds: number, input = NO_INPUT, dt = 1 / 60): void
 
 describe('stepWorld: 移動', () => {
   it('入力が無ければ止まったままでいる', () => {
-    const w = createWorld()
+    const w = startedWorld()
     run(w, 1)
     expect(length(w.player.vel)).toBe(0)
     expect(w.player.pos).toEqual(vec2(0, 0))
   })
 
   it('最高速度を超えない', () => {
-    const w = createWorld()
+    const w = startedWorld()
     // 境界に達すると速度が削られるので、フィールド内に収まる時間だけ走らせる
     run(w, 0.5, { move: vec2(0, 1), dash: null })
     expect(length(w.player.vel)).toBeCloseTo(PLAYER.speed, 5)
   })
 
   it('斜め入力でも最高速度を超えない（対角が速くならない）', () => {
-    const w = createWorld()
+    const w = startedWorld()
     run(w, 0.5, { move: vec2(1, 1), dash: null })
     expect(length(w.player.vel)).toBeLessThanOrEqual(PLAYER.speed + 1e-6)
   })
 
   it('入力を離すと減速して止まる', () => {
-    const w = createWorld()
+    const w = startedWorld()
     run(w, 1, { move: vec2(0, 1), dash: null })
     run(w, 1)
     expect(length(w.player.vel)).toBe(0)
   })
 
   it('フィールドの外へ出ない', () => {
-    const w = createWorld()
+    const w = startedWorld()
     run(w, 10, { move: vec2(1, 0), dash: null })
     expect(length(w.player.pos)).toBeLessThanOrEqual(FIELD_RADIUS - PLAYER.radius + 1e-6)
   })
 
   it('境界に押し付けても外向きの速度が溜まらない', () => {
-    const w = createWorld()
+    const w = startedWorld()
     run(w, 10, { move: vec2(1, 0), dash: null })
     expect(w.player.vel.x).toBeCloseTo(0, 5)
   })
@@ -57,14 +72,14 @@ describe('stepWorld: 移動', () => {
 
 describe('stepWorld: ダッシュ', () => {
   it('ダッシュ中は無敵になる', () => {
-    const w = createWorld()
+    const w = startedWorld()
     stepWorld(w, { move: vec2(), dash: vec2(0, 1) }, 1 / 60)
     expect(isDashing(w.player)).toBe(true)
     expect(isInvulnerable(w.player)).toBe(true)
   })
 
   it('無敵はダッシュ本体より長く残る', () => {
-    const w = createWorld()
+    const w = startedWorld()
     stepWorld(w, { move: vec2(), dash: vec2(0, 1) }, 1 / 60)
     run(w, DASH.duration)
     expect(isDashing(w.player)).toBe(false)
@@ -72,7 +87,7 @@ describe('stepWorld: ダッシュ', () => {
   })
 
   it('クールダウン中は再発動しない', () => {
-    const w = createWorld()
+    const w = startedWorld()
     stepWorld(w, { move: vec2(), dash: vec2(0, 1) }, 1 / 60)
     run(w, DASH.duration + 0.05)
     stepWorld(w, { move: vec2(), dash: vec2(0, 1) }, 1 / 60)
@@ -80,7 +95,7 @@ describe('stepWorld: ダッシュ', () => {
   })
 
   it('クールダウン明けには再発動できる', () => {
-    const w = createWorld()
+    const w = startedWorld()
     stepWorld(w, { move: vec2(), dash: vec2(0, 1) }, 1 / 60)
     run(w, DASH.cooldown + 0.05)
     stepWorld(w, { move: vec2(), dash: vec2(0, 1) }, 1 / 60)
@@ -88,13 +103,13 @@ describe('stepWorld: ダッシュ', () => {
   })
 
   it('ダッシュは通常移動より速く、入力方向に関係なく指定方向へ進む', () => {
-    const w = createWorld()
+    const w = startedWorld()
     stepWorld(w, { move: vec2(0, -1), dash: vec2(0, 1) }, 1 / 60)
     expect(w.player.vel.z).toBeCloseTo(DASH.speed, 5)
   })
 
   it('長さ 0 のダッシュ要求は無視する', () => {
-    const w = createWorld()
+    const w = startedWorld()
     stepWorld(w, { move: vec2(), dash: vec2(0, 0) }, 1 / 60)
     expect(isDashing(w.player)).toBe(false)
     expect(w.player.cooldown).toBe(0)
@@ -103,8 +118,8 @@ describe('stepWorld: ダッシュ', () => {
 
 describe('stepWorld: 決定性', () => {
   it('同じ入力からは同じ状態になる', () => {
-    const a = createWorld()
-    const b = createWorld()
+    const a = startedWorld()
+    const b = startedWorld()
     const input = { move: vec2(0.4, 0.9), dash: null }
     run(a, 1.5, input)
     run(b, 1.5, input)
@@ -115,7 +130,7 @@ describe('stepWorld: 決定性', () => {
 describe('stepWorld: フレームレート非依存', () => {
   it('dt が変わってもダッシュ距離が変わらない', () => {
     const distanceAt = (dt: number): number => {
-      const w = createWorld()
+      const w = startedWorld()
       stepWorld(w, { move: vec2(), dash: vec2(0, 1) }, dt)
       // ダッシュが終わった時点で測る（それ以降は惰性なのでダッシュ距離ではない）
       while (w.player.dashTime > 0) stepWorld(w, NO_INPUT, dt)
@@ -127,14 +142,14 @@ describe('stepWorld: フレームレート非依存', () => {
   })
 
   it('ダッシュ直後に通常の最高速度を超えたままにならない', () => {
-    const w = createWorld()
+    const w = startedWorld()
     stepWorld(w, { move: vec2(), dash: vec2(0, 1) }, 1 / 60)
     run(w, DASH.duration + 0.05)
     expect(length(w.player.vel)).toBeLessThanOrEqual(PLAYER.speed + 1e-6)
   })
 
   it('dt が 0 以下なら何も進まない', () => {
-    const w = createWorld()
+    const w = startedWorld()
     const before = snapshot(w)
     stepWorld(w, { move: vec2(0, 1), dash: vec2(0, 1) }, 0)
     expect(snapshot(w)).toEqual(before)

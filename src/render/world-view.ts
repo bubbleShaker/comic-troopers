@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { ENEMY, FIELD_RADIUS, WEAPON } from '../core/config'
-import { isDashing, type World } from '../core/world'
+import { isDashing, isInvulnerable, type World } from '../core/world'
 import { createOnomatopoeiaLayer } from './onomatopoeia'
 import { createPool } from './pool'
 import type { Stage } from './scene'
@@ -179,6 +179,9 @@ export function createWorldView(stage: Stage): WorldView {
       shadow.position.set(p.pos.x, 0.03, p.pos.z)
 
       bodyMaterial.color.set(isDashing(p) ? COLORS.playerDash : COLORS.player)
+      // 被弾直後の無敵は点滅で伝える。ダッシュ中の無敵は色で分かるので点滅させない。
+      const hitInvulnerable = isInvulnerable(p) && !isDashing(p)
+      player.visible = !hitInvulnerable || Math.floor(world.time * 20) % 2 === 0
 
       enemyPool.begin()
       for (const enemy of world.enemies) {
