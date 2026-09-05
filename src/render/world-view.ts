@@ -1,6 +1,8 @@
 import * as THREE from 'three'
 import { FIELD_RADIUS } from '../core/config'
+import { ENEMY, WEAPON } from '../core/config'
 import { isDashing, type World } from '../core/world'
+import { createPool } from './pool'
 import type { Stage } from './scene'
 
 export type WorldView = {
@@ -14,10 +16,11 @@ export type WorldView = {
 const CAMERA_FOLLOW = 6
 /** 自機からのカメラ相対位置（横長画面での基準値） */
 const CAMERA_OFFSET = new THREE.Vector3(0, 18, 12)
-/** 注視点を自機より奥へずらし、自機を画面下寄りに置いて進行方向を広く見せる */
-const LOOK_AHEAD = 5
+/** 注視点を自機より奥へずらし、自機をやや画面下寄りに置く */
+const LOOK_AHEAD = 3
 /** 1マスの大きさ(m) */
 const GRID_CELL = 2
+const ENEMY_COLOR = '#ff5c39'
 
 /**
  * 円形の地面にそのまま貼れるグリッド模様を作る。
@@ -91,13 +94,42 @@ export function createWorldView(stage: Stage): WorldView {
   shadow.position.y = 0.03
   scene.add(shadow)
 
+  // 敵と弾はジオメトリを共有し、マテリアルだけ個別に持つ（被弾点滅を1体ずつ変えるため）
+  const enemyGeometry = new THREE.OctahedronGeometry(ENEMY.radius, 0)
+  const enemyPool = createPool(
+    scene,
+    () =>
+      new THREE.Mesh(
+        enemyGeometry,
+        new THREE.MeshStandardMaterial({ color: ENEMY_COLOR, flatShading: true, roughness: 0.6 }),
+      ),
+    (mesh) => (mesh.material as THREE.Material).dispose(),
+  )
+
+  const bulletGeometry = new THREE.SphereGeometry(WEAPON.bulletRadius, 8, 6)
+  const bulletMaterial = new THREE.MeshBasicMaterial({ color: '#ffe066' })
+  const bulletPool = createPool(
+    scene,
+    () => new THREE.Mesh(bulletGeometry, bulletMaterial),
+    () => {},
+  )
+
+  // ロックオンマーカー。対象の足元で回すだけの簡素なリング。
+  const lockMarker = new THREE.Mesh(
+    new THREE.RingGeometry(1.0, 1.25, 4),
+    new THREE.MeshBasicMaterial({ color: '#ffd23f', side: THREE.DoubleSide, transparent: true, opacity: 0.9 }),
+  )
+  lockMarker.rotation.x = -Math.PI / 2
+  lockMarker.visible = false
+  scene.add(lockMarker)
+
   const desired = new THREE.Vector3()
   const lookAt = new THREE.Vector3()
   // 初回だけ補間せず目標位置へ置く。zoom 補正後の位置と初期値がずれ、
   // 読み込み直後にカメラが引いていく動きが見えてしまうため。
   let snapCamera = true
 
-  const objects = [ground, border, player, shadow]
+  const objects = [ground, border, player, shadow, lockMarker]
 
   return {
     sync: (world, dt) => {
@@ -109,8 +141,34 @@ export function createWorldView(stage: Stage): WorldView {
       // ダッシュ中を色で示す（本格的な演出は M3）
       bodyMaterial.color.set(isDashing(p) ? '#7cf5ff' : '#f4f4ff')
 
-      // 縦持ちは水平方向の視界が極端に狭くなるので、その分カメラを引いて横幅を稼ぐ。
-      const zoom = THREE.MathUtils.clamp(1 / Math.min(camera.aspect, 1), 1, 1.7)
+      enemyPool.begin()
+      for (const enemy of world.enemies) {
+        const mesh = enemyPool.take()
+        mesh.position.set(enemy.pos.x, ENEMY.radius, enemy.pos.z)
+        // 転がるような回転で「生きている」感を出す
+        mesh.rotation.y += dt * 3
+        mesh.rotation.x += dt * 1.5
+        const material = mesh.material as THREE.MeshStandardMaterial
+        material.color.set(enemy.hitFlash > 0 ? '#ffffff' : ENEMY_COLOR)
+      }
+      enemyPool.end()
+
+      bulletPool.begin()
+      for (const bullet of world.bullets) {
+        bulletPool.take().position.set(bullet.pos.x, 1.1, bullet.pos.z)
+      }
+      bulletPool.end()
+
+      const target = world.enemies.find((enemy) => enemy.id === world.lockTargetId)
+      lockMarker.visible = target !== undefined
+      if (target) {
+        lockMarker.position.set(target.pos.x, 0.05, target.pos.z)
+        lockMarker.rotation.z += dt * 2
+      }
+
+      // 縦持ちは水平方向の視界が極端に狭くなる。1/aspect ぶん引くと、
+      // 画面比によらず「横に見える距離」がほぼ一定（約 22m）になる。
+      const zoom = THREE.MathUtils.clamp(1 / Math.min(camera.aspect, 1), 1, 2.6)
       desired.set(
         p.pos.x + CAMERA_OFFSET.x * zoom,
         CAMERA_OFFSET.y * zoom,
@@ -138,6 +196,11 @@ export function createWorldView(stage: Stage): WorldView {
         })
       }
       gridTexture?.dispose()
+      enemyPool.dispose()
+      bulletPool.dispose()
+      enemyGeometry.dispose()
+      bulletGeometry.dispose()
+      bulletMaterial.dispose()
     },
   }
 }
