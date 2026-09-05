@@ -4,18 +4,23 @@ export type Stage = {
   scene: THREE.Scene
   camera: THREE.PerspectiveCamera
   renderer: THREE.WebGLRenderer
+  /** 描画する。WebGL コンテキストを失っている間は何もしない。 */
   render: () => void
   dispose: () => void
 }
 
+export type StageOptions = {
+  /** WebGL コンテキストを失った / 復帰した時に呼ばれる */
+  onContextLost?: () => void
+  onContextRestored?: () => void
+}
+
 /**
- * レンダラ・シーン・カメラを組み立て、リサイズ追従までまとめて面倒を見る。
+ * レンダラ・シーン・カメラを組み立て、リサイズ追従とコンテキスト消失までまとめて面倒を見る。
  * ゲームロジックからは「毎フレーム render() を呼ぶ箱」としてだけ見えればよい。
  */
-export function createStage(container: HTMLElement): Stage {
+export function createStage(container: HTMLElement, options: StageOptions = {}): Stage {
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
-  // スマホの devicePixelRatio は 3〜4 まで上がる。等倍で描くと GPU が溶けるので 2 で頭打ちにする。
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   container.appendChild(renderer.domElement)
 
   const scene = new THREE.Scene()
@@ -33,25 +38,58 @@ export function createStage(container: HTMLElement): Stage {
   const resize = () => {
     const w = container.clientWidth
     const h = container.clientHeight
+    if (w === 0 || h === 0) return
+    // devicePixelRatio はブラウザのズームや別 DPI ディスプレイへの移動で変わるため毎回入れ直す。
+    // スマホでは 3〜4 まで上がるので 2 で頭打ちにして GPU 負荷を抑える。
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.setSize(w, h, false)
     camera.aspect = w / h
     camera.updateProjectionMatrix()
   }
   resize()
+
+  // iOS Safari の orientationchange はレイアウト更新「前」に飛ぶので、
+  // 同期で測ると回転前のサイズを拾ってしまう。次フレームまで待ってから測る。
+  const resizeDeferred = () => requestAnimationFrame(() => requestAnimationFrame(resize))
+
   window.addEventListener('resize', resize)
-  // iOS は画面回転直後に clientHeight が古い値を返すことがあるため、向き変更でも明示的に測り直す。
-  window.addEventListener('orientationchange', resize)
+  window.addEventListener('orientationchange', resizeDeferred)
+  // アドレスバーの伸縮など、window の resize が飛ばない見た目の変化を拾う。
+  window.visualViewport?.addEventListener('resize', resize)
+
+  // モバイルではタブのバックグラウンド化やメモリ逼迫でコンテキストが落ちる。
+  // preventDefault しないと復帰イベント自体が来ず、以後ずっと黒画面になる。
+  let contextLost = false
+  const onLost = (e: Event) => {
+    e.preventDefault()
+    contextLost = true
+    options.onContextLost?.()
+  }
+  const onRestored = () => {
+    contextLost = false
+    resize()
+    options.onContextRestored?.()
+  }
+  const canvas = renderer.domElement
+  canvas.addEventListener('webglcontextlost', onLost)
+  canvas.addEventListener('webglcontextrestored', onRestored)
 
   return {
     scene,
     camera,
     renderer,
-    render: () => renderer.render(scene, camera),
+    render: () => {
+      if (contextLost) return
+      renderer.render(scene, camera)
+    },
     dispose: () => {
       window.removeEventListener('resize', resize)
-      window.removeEventListener('orientationchange', resize)
+      window.removeEventListener('orientationchange', resizeDeferred)
+      window.visualViewport?.removeEventListener('resize', resize)
+      canvas.removeEventListener('webglcontextlost', onLost)
+      canvas.removeEventListener('webglcontextrestored', onRestored)
       renderer.dispose()
-      renderer.domElement.remove()
+      canvas.remove()
     },
   }
 }

@@ -20,14 +20,21 @@
         box-sizing: border-box;
       }
       html,
+      body,
+      #app,
+      #app canvas {
+        /* touch-action / overscroll-behavior は継承しないので、実際にタッチを受ける
+           canvas まで個別に指定する。これが無いとスワイプをブラウザのスクロールや
+           引っ張り更新に奪われ、ドラッグ中の pointer イベントが打ち切られる。 */
+        touch-action: none;
+        overscroll-behavior: none;
+      }
+      html,
       body {
         width: 100%;
         height: 100%;
         overflow: hidden;
         background: #12101a;
-        /* スワイプ操作をブラウザのスクロール/引っ張り更新に奪われないようにする */
-        touch-action: none;
-        overscroll-behavior: none;
         -webkit-user-select: none;
         user-select: none;
         -webkit-tap-highlight-color: transparent;
@@ -42,10 +49,27 @@
         width: 100%;
         height: 100%;
       }
+      /* WebGL コンテキスト消失など、続行不能になった時だけ出す全画面通知 */
+      #notice {
+        position: fixed;
+        inset: 0;
+        display: none;
+        place-items: center;
+        padding: 2rem;
+        text-align: center;
+        line-height: 1.8;
+        color: #fff;
+        background: rgba(18, 16, 26, 0.92);
+        font-size: 1rem;
+      }
+      #notice[data-visible="true"] {
+        display: grid;
+      }
     </style>
   </head>
   <body>
     <div id="app"></div>
+    <div id="notice" role="status" aria-live="polite"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
