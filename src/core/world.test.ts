@@ -3,6 +3,12 @@ import { DASH, FIELD_RADIUS, PLAYER } from './config'
 import { length, vec2 } from './types'
 import { createWorld, isDashing, isInvulnerable, NO_INPUT, stepWorld, type World } from './world'
 
+/**
+ * World の比較用スナップショット。RNG は next() だけが関数で state は素の値なので、
+ * JSON 化しても「乱数がどこまで進んだか」は比較対象に残る。
+ */
+const snapshot = (world: World): string => JSON.stringify(world)
+
 /** dt を細かく刻んで seconds 秒ぶん進める。1フレームで大きく進めると挙動が実機とずれるため。 */
 function run(world: World, seconds: number, input = NO_INPUT, dt = 1 / 60): void {
   for (let t = 0; t < seconds; t += dt) stepWorld(world, input, dt)
@@ -18,13 +24,14 @@ describe('stepWorld: 移動', () => {
 
   it('最高速度を超えない', () => {
     const w = createWorld()
-    run(w, 2, { move: vec2(0, 1), dash: null })
+    // 境界に達すると速度が削られるので、フィールド内に収まる時間だけ走らせる
+    run(w, 0.5, { move: vec2(0, 1), dash: null })
     expect(length(w.player.vel)).toBeCloseTo(PLAYER.speed, 5)
   })
 
   it('斜め入力でも最高速度を超えない（対角が速くならない）', () => {
     const w = createWorld()
-    run(w, 2, { move: vec2(1, 1), dash: null })
+    run(w, 0.5, { move: vec2(1, 1), dash: null })
     expect(length(w.player.vel)).toBeLessThanOrEqual(PLAYER.speed + 1e-6)
   })
 
@@ -101,7 +108,7 @@ describe('stepWorld: 決定性', () => {
     const input = { move: vec2(0.4, 0.9), dash: null }
     run(a, 1.5, input)
     run(b, 1.5, input)
-    expect(a).toEqual(b)
+    expect(snapshot(a)).toEqual(snapshot(b))
   })
 })
 
@@ -128,8 +135,8 @@ describe('stepWorld: フレームレート非依存', () => {
 
   it('dt が 0 以下なら何も進まない', () => {
     const w = createWorld()
-    const before = structuredClone(w)
+    const before = snapshot(w)
     stepWorld(w, { move: vec2(0, 1), dash: vec2(0, 1) }, 0)
-    expect(w).toEqual(before)
+    expect(snapshot(w)).toEqual(before)
   })
 })

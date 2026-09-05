@@ -36,3 +36,17 @@ export function moveTowards(cur: Vec2, target: Vec2, maxDelta: number): Vec2 {
   if (d <= maxDelta || d === 0) return vec2(target.x, target.z)
   return vec2(cur.x + (dx / d) * maxDelta, cur.z + (dz / d) * maxDelta)
 }
+
+/**
+ * 線分 a→b と点 p の最短距離。
+ * 高速な弾は1フレームで敵の直径以上を進むので、移動後の1点だけで判定するとすり抜ける。
+ * 移動の軌跡を線分として扱うことで、フレームレートに関係なく当たるようにする。
+ */
+export function distanceToSegment(a: Vec2, b: Vec2, p: Vec2): number {
+  const abx = b.x - a.x
+  const abz = b.z - a.z
+  const lengthSq = abx * abx + abz * abz
+  if (lengthSq === 0) return distance(a, p)
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * abx + (p.z - a.z) * abz) / lengthSq))
+  return Math.hypot(a.x + abx * t - p.x, a.z + abz * t - p.z)
+}
